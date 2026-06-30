@@ -48,3 +48,10 @@ export const update = mutation({
     await ctx.db.patch(id, filtered);
   },
 });
+
+export const remove = mutation({
+  args: { id: v.id("geofenceLogs") },
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.id);
+  },
+});

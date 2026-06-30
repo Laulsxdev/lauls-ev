@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
-import { useQuery } from "convex/react";
+import { Search, Trash2 } from "lucide-react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Doc } from "@convex/_generated/dataModel";
 import { TopBar } from "@/components/top-bar";
-import { Input, Select, Badge } from "@/components/ui-kit";
+import { Input, Select, Badge, Button } from "@/components/ui-kit";
 import { format } from "date-fns";
 
 export const Route = createFileRoute("/admin/geofence")({
@@ -16,6 +16,7 @@ function GeofencePage() {
   const logs: Doc<"geofenceLogs">[] = useQuery(api.geofenceLogs.list) ?? [];
   const vehicles: Doc<"vehicles">[] = useQuery(api.vehicles.list) ?? [];
   const trips: Doc<"trips">[] = useQuery(api.trips.list) ?? [];
+  const removeLog = useMutation(api.geofenceLogs.remove);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState("all");
 
@@ -73,7 +74,11 @@ function GeofencePage() {
                     <td className="px-4 py-3.5">
                       {g.breached ? <Badge variant="red">Breached</Badge> : <Badge variant="green">Within</Badge>}
                     </td>
-                    <td />
+                    <td>
+                      <Button variant="destructive" onClick={() => removeLog({ id: g._id })}>
+                        <Trash2 size={12} />
+                      </Button>
+                    </td>
                   </tr>
                 );
               })}
