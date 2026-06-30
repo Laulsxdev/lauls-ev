@@ -18,6 +18,7 @@ import { Route as AdminVehiclesRouteImport } from './routes/admin.vehicles'
 import { Route as AdminTripsRouteImport } from './routes/admin.trips'
 import { Route as AdminGeofenceRouteImport } from './routes/admin.geofence'
 import { Route as AdminDriversRouteImport } from './routes/admin.drivers'
+import { Route as AdminBulkRouteImport } from './routes/admin.bulk'
 
 const ManualFillRoute = ManualFillRouteImport.update({
   id: '/manual-fill',
@@ -64,12 +65,18 @@ const AdminDriversRoute = AdminDriversRouteImport.update({
   path: '/drivers',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminBulkRoute = AdminBulkRouteImport.update({
+  id: '/bulk',
+  path: '/bulk',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/manual-fill': typeof ManualFillRoute
+  '/admin/bulk': typeof AdminBulkRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/geofence': typeof AdminGeofenceRoute
   '/admin/trips': typeof AdminTripsRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/manual-fill': typeof ManualFillRoute
+  '/admin/bulk': typeof AdminBulkRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/geofence': typeof AdminGeofenceRoute
   '/admin/trips': typeof AdminTripsRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/auth': typeof AuthRoute
   '/manual-fill': typeof ManualFillRoute
+  '/admin/bulk': typeof AdminBulkRoute
   '/admin/drivers': typeof AdminDriversRoute
   '/admin/geofence': typeof AdminGeofenceRoute
   '/admin/trips': typeof AdminTripsRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/manual-fill'
+    | '/admin/bulk'
     | '/admin/drivers'
     | '/admin/geofence'
     | '/admin/trips'
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/manual-fill'
+    | '/admin/bulk'
     | '/admin/drivers'
     | '/admin/geofence'
     | '/admin/trips'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/auth'
     | '/manual-fill'
+    | '/admin/bulk'
     | '/admin/drivers'
     | '/admin/geofence'
     | '/admin/trips'
@@ -205,10 +217,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminDriversRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/bulk': {
+      id: '/admin/bulk'
+      path: '/bulk'
+      fullPath: '/admin/bulk'
+      preLoaderRoute: typeof AdminBulkRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
 interface AdminRouteChildren {
+  AdminBulkRoute: typeof AdminBulkRoute
   AdminDriversRoute: typeof AdminDriversRoute
   AdminGeofenceRoute: typeof AdminGeofenceRoute
   AdminTripsRoute: typeof AdminTripsRoute
@@ -217,6 +237,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminBulkRoute: AdminBulkRoute,
   AdminDriversRoute: AdminDriversRoute,
   AdminGeofenceRoute: AdminGeofenceRoute,
   AdminTripsRoute: AdminTripsRoute,

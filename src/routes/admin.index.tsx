@@ -4,10 +4,12 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   BarChart, Bar, PieChart, Pie, Cell,
 } from "recharts";
+import { useQuery } from "convex/react";
+import { api } from "@convex/_generated/api";
+import { Doc } from "@convex/_generated/dataModel";
 import { TopBar } from "@/components/top-bar";
 import { KpiCard } from "@/components/kpi-card";
 import { Badge, SectionLabel } from "@/components/ui-kit";
-import { getFleetStats, getTodayTrips, getAlerts, getCostStats, getChargingStats, useStore, tripCost } from "@/lib/mock-store";
 import { format } from "date-fns";
 
 export const Route = createFileRoute("/admin/")({
@@ -22,25 +24,25 @@ const tooltipStyle = {
   fontSize: 12,
 };
 
+const ENERGY_COST_PER_KWH = 8;
+
 function Dashboard() {
-  const trips = useStore((s) => s.trips);
-  const vehicles = useStore((s) => s.vehicles);
-  const drivers = useStore((s) => s.drivers);
-  const stats = getFleetStats();
+  const trips: Doc<"trips">[] = useQuery(api.trips.list) ?? [];
+  const vehicles: Doc<"vehicles">[] = useQuery(api.vehicles.list) ?? [];
+  const drivers: Doc<"drivers">[] = useQuery(api.drivers.list) ?? [];
+  const stats = useQuery(api.dashboard.fleetStats);
+  const cost = useQuery(api.dashboard.costStats);
+  const charging = useQuery(api.dashboard.chargingStats);
+  const alerts = useQuery(api.dashboard.alerts) ?? [];
 
-  const todayTrips = getTodayTrips();
-  const alerts = getAlerts();
-  const cost = getCostStats();
-  const charging = getChargingStats();
-
+  const today = new Date().toISOString().slice(0, 10);
+  const todayTrips = trips.filter((t) => t.date === today);
   const todayDistance = todayTrips.reduce((a, t) => a + t.distance, 0);
   const todayEnergy = +todayTrips.reduce((a, t) => a + t.energyConsumed, 0).toFixed(1);
-  const todayCost = todayTrips.reduce((a, t) => a + tripCost(t), 0);
+  const todayCost = todayTrips.reduce((a, t) => a + Math.round(t.energyConsumed * ENERGY_COST_PER_KWH), 0);
 
-  // Build a 7-day series from trips
-  const today = new Date();
   const days = Array.from({ length: 7 }).map((_, i) => {
-    const d = new Date(today); d.setDate(d.getDate() - (6 - i));
+    const d = new Date(); d.setDate(d.getDate() - (6 - i));
     const ds = d.toISOString().slice(0, 10);
     const dayTrips = trips.filter((t) => t.date === ds);
     return {
@@ -52,12 +54,12 @@ function Dashboard() {
 
   const vehicleEnergy = vehicles.map((v) => ({
     name: v.rcNumber.split("-").slice(-1)[0],
-    energy: +trips.filter((t) => t.vehicleId === v.id).reduce((a, t) => a + t.energyConsumed, 0).toFixed(1),
+    energy: +trips.filter((t) => t.vehicleId === v._id).reduce((a, t) => a + t.energyConsumed, 0).toFixed(1),
   }));
 
   const driverTrips = drivers.map((d) => ({
     name: d.name.split(" ")[0],
-    trips: trips.filter((t) => t.driverId === d.id).length,
+    trips: trips.filter((t) => t.driverId === d._id).length,
   })).sort((a, b) => b.trips - a.trips).slice(0, 5);
 
   const statusBreakdown = [
@@ -66,15 +68,14 @@ function Dashboard() {
     { name: "Inactive", value: vehicles.filter((v) => v.status === "inactive").length, color: "#EF4444" },
   ].filter((s) => s.value > 0);
 
-  const recent = [...trips].sort((a, b) => b.createdAt - a.createdAt).slice(0, 10);
-
   const spark = (key: "distance" | "energy") => days.map((d) => d[key]);
+
+  if (!stats || !cost || !charging) return <><TopBar title="Dashboard" /><div className="p-6 text-text-muted text-sm">Loading…</div></>;
 
   return (
     <>
       <TopBar title="Dashboard" />
       <div className="p-6 space-y-6">
-        {/* Today's overview — what an operator actually needs at a glance */}
         <div className="card-panel p-4">
           <SectionLabel>Today</SectionLabel>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3">
@@ -97,7 +98,6 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* KPI row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <KpiCard icon={<Truck size={16} />} label="Active vehicles" value={`${stats.activeVehicles}/${stats.totalVehicles}`} trend={{ value: 4.2, positive: true }} sparkline={[3, 4, 4, 5, 5, 4, 5]} />
           <KpiCard icon={<Users size={16} />} label="Drivers on roster" value={String(stats.totalDrivers)} trend={{ value: 8.1, positive: true }} sparkline={[2, 2, 3, 3, 4, 4, 4]} />
@@ -107,7 +107,6 @@ function Dashboard() {
           <KpiCard icon={<IndianRupee size={16} />} label="Total spend" value={`₹${cost.totalCost.toLocaleString()}`} trend={{ value: 2.1, positive: false }} sparkline={[1200, 1350, 1180, 1420, 1390, 1280, cost.totalCost]} accent="amber" />
         </div>
 
-        {/* Alerts + charging overview */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="card-panel p-5 lg:col-span-2">
             <SectionLabel>Alerts</SectionLabel>
@@ -148,7 +147,6 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card-panel p-5">
             <div className="flex items-center justify-between mb-4">
@@ -251,14 +249,14 @@ function Dashboard() {
                 </tr>
               </thead>
               <tbody>
-                {recent.length === 0 && (
+                {trips.length === 0 && (
                   <tr><td colSpan={7} className="text-center text-sm text-text-muted py-10">No trips yet.</td></tr>
                 )}
-                {recent.map((t) => {
-                  const d = drivers.find((x) => x.id === t.driverId);
-                  const v = vehicles.find((x) => x.id === t.vehicleId);
+                {[...trips].sort((a, b) => b.date > a.date ? 1 : -1).slice(0, 10).map((t) => {
+                  const d = drivers.find((x) => x._id === t.driverId);
+                  const v = vehicles.find((x) => x._id === t.vehicleId);
                   return (
-                    <tr key={t.id} className="border-b border-border-default hover:bg-bg-2 transition">
+                    <tr key={t._id} className="border-b border-border-default hover:bg-bg-2 transition">
                       <td className="px-4 py-3.5 text-[13px] text-text-secondary tabular-nums">{t.date}</td>
                       <td className="px-4 py-3.5 text-[13px] text-text-primary">{d?.name ?? "—"}</td>
                       <td className="px-4 py-3.5 text-[13px] text-text-primary font-mono text-xs">{v?.rcNumber ?? "—"}</td>

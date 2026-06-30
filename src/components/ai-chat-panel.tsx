@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Send, Sparkles } from "lucide-react";
+import { useQuery, useAction } from "convex/react";
+import { api } from "@convex/_generated/api";
+import Markdown from "react-markdown";
 import { SlideOver } from "./slide-over";
-import { getFleetStats } from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
 
 interface Msg { role: "user" | "assistant"; text: string; }
@@ -11,32 +13,16 @@ const suggestions = [
   "Which vehicle needs service?",
   "Top idling drivers",
   "Energy report",
+  "Compare driver efficiency",
+  "Geofence breach report",
 ];
-
-// Mock AI — backend can replace with a Convex action calling OpenRouter.
-function mockReply(q: string): string {
-  const s = getFleetStats();
-  const ql = q.toLowerCase();
-  if (ql.includes("summary") || ql.includes("week")) {
-    return `Current fleet snapshot: ${s.activeVehicles}/${s.totalVehicles} vehicles active, ${s.totalDrivers} drivers, ${s.totalTrips} trips logged. Total distance ${s.totalDistance.toLocaleString()} km consuming ${s.totalEnergy} kWh (avg ${s.avgConsumption} kWh/km). Average battery health across the fleet is ${s.avgBatteryHealth}%.`;
-  }
-  if (ql.includes("service") || ql.includes("maintenance")) {
-    return `Vehicles flagged for attention are those with battery health under 70%. Fleet-wide health is ${s.avgBatteryHealth}%. Check the Vehicles page for units in "maintenance" status — there is currently ${s.totalVehicles - s.activeVehicles} non-active unit(s).`;
-  }
-  if (ql.includes("idl")) {
-    return `Total idling time recorded: ${s.totalIdleHours} hours across all logged trips. Idle energy averages roughly 8% of trip energy. Drivers consistently above this baseline should be coached on stop-and-go behaviour.`;
-  }
-  if (ql.includes("energy") || ql.includes("report")) {
-    return `Energy report — ${s.totalEnergy} kWh consumed across ${s.totalDistance.toLocaleString()} km, giving a fleet average of ${s.avgConsumption} kWh/km. Cargo-weight-adjusted estimate matches actuals within ~5%, suggesting healthy driving behaviour.`;
-  }
-  return `I can pull live numbers from your fleet. ${s.totalTrips} trips, ${s.totalVehicles} vehicles, ${s.totalDrivers} drivers right now. Ask me about consumption, idling, geofence breaches, or specific drivers.`;
-}
 
 export function AIChatPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chat = useAction(api.chat.chat);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -45,11 +31,20 @@ export function AIChatPanel({ open, onClose }: { open: boolean; onClose: () => v
   const send = async (text: string) => {
     const t = text.trim();
     if (!t) return;
-    setMessages((m) => [...m, { role: "user", text: t }]);
+    const userMsg = { role: "user" as const, text: t };
+    setMessages((m) => [...m, userMsg]);
     setInput("");
     setThinking(true);
-    await new Promise((r) => setTimeout(r, 700 + Math.random() * 600));
-    setMessages((m) => [...m, { role: "assistant", text: mockReply(t) }]);
+    try {
+      const history = [...messages, userMsg].slice(-10).map((m) => ({
+        role: m.role,
+        content: m.text,
+      }));
+      const reply = await chat({ message: t, history });
+      setMessages((m) => [...m, { role: "assistant", text: reply }]);
+    } catch {
+      setMessages((m) => [...m, { role: "assistant", text: "Error connecting to AI. Try again." }]);
+    }
     setThinking(false);
   };
 
@@ -92,7 +87,19 @@ export function AIChatPanel({ open, onClose }: { open: boolean; onClose: () => v
                 "max-w-[85%] px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed",
                 m.role === "user" ? "bg-accent text-white" : "bg-bg-2 text-text-primary border border-border-default",
               )}>
-                {m.text}
+                <Markdown components={{
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  table: ({ children }) => <div className="overflow-x-auto my-2"><table className="w-full text-xs border-collapse">{children}</table></div>,
+                  thead: ({ children }) => <thead className="border-b border-border-default">{children}</thead>,
+                  th: ({ children }) => <th className="text-left px-2 py-1 text-text-muted font-medium">{children}</th>,
+                  td: ({ children }) => <td className="px-2 py-1 text-text-primary border-b border-border-default">{children}</td>,
+                  strong: ({ children }) => <strong className="text-text-primary font-semibold">{children}</strong>,
+                  code: ({ children }) => <code className="px-1.5 py-0.5 rounded bg-bg-3 text-[12px] font-mono">{children}</code>,
+                  ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
+                  h1: ({ children }) => <h1 className="text-base font-bold text-text-primary mb-2">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-sm font-bold text-text-primary mb-1 mt-3">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-xs font-bold text-text-primary mb-1 mt-2">{children}</h3>,
+                }}>{m.text}</Markdown>
               </div>
             </div>
           ))}

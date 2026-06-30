@@ -1,31 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Plus, Edit2, Trash2, Search } from "lucide-react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@convex/_generated/api";
+import { Id, Doc } from "@convex/_generated/dataModel";
 import { TopBar } from "@/components/top-bar";
 import { SlideOver } from "@/components/slide-over";
 import { Button, Input, Select, Field, Badge, BatteryBar } from "@/components/ui-kit";
-import {
-  createVehicle, deleteVehicle, updateVehicle, useStore,
-  type Vehicle,
-} from "@/lib/mock-store";
 import { format } from "date-fns";
 
 export const Route = createFileRoute("/admin/vehicles")({
   component: VehiclesPage,
 });
 
-function statusBadge(s: Vehicle["status"]) {
+type VehicleStatus = "active" | "maintenance" | "inactive";
+
+function statusBadge(s: VehicleStatus) {
   if (s === "active") return <Badge variant="green">Active</Badge>;
   if (s === "maintenance") return <Badge variant="amber">Maintenance</Badge>;
   return <Badge variant="red">Inactive</Badge>;
 }
 
 function VehiclesPage() {
-  const vehicles = useStore((s) => s.vehicles);
-  const trips = useStore((s) => s.trips);
+  const vehicles: Doc<"vehicles">[] = useQuery(api.vehicles.list) ?? [];
+  const trips: Doc<"trips">[] = useQuery(api.trips.list) ?? [];
+  const deleteVehicle = useMutation(api.vehicles.remove);
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [editing, setEditing] = useState<Vehicle | "new" | null>(null);
+  const [editing, setEditing] = useState<Doc<"vehicles"> | "new" | null>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const lastTrip = (vid: string) => {
@@ -72,24 +74,24 @@ function VehiclesPage() {
                 <tr><td colSpan={7} className="text-center text-sm text-text-muted py-12">No vehicles found.</td></tr>
               )}
               {filtered.map((v) => (
-                <tr key={v.id} className="group border-b border-border-default hover:bg-bg-2 transition">
+                <tr key={v._id} className="group border-b border-border-default hover:bg-bg-2 transition">
                   <td className="px-4 py-3.5 text-[13px] text-text-primary font-mono">{v.rcNumber}</td>
                   <td className="px-4 py-3.5 text-[13px] text-text-secondary">{v.manufacturer}</td>
                   <td className="px-4 py-3.5 text-[13px] text-text-secondary">{v.trailerType}</td>
                   <td className="px-4 py-3.5"><BatteryBar value={v.batteryHealth} /></td>
                   <td className="px-4 py-3.5">{statusBadge(v.status)}</td>
-                  <td className="px-4 py-3.5 text-[13px] text-text-secondary tabular-nums">{lastTrip(v.id) ?? "—"}</td>
+                  <td className="px-4 py-3.5 text-[13px] text-text-secondary tabular-nums">{lastTrip(v._id) ?? "—"}</td>
                   <td className="px-4 py-3.5 text-right">
                     <div className="inline-flex gap-1 opacity-0 group-hover:opacity-100 transition">
                       <button onClick={() => setEditing(v)} className="w-8 h-8 rounded-md text-text-secondary hover:bg-bg-3 hover:text-text-primary inline-flex items-center justify-center"><Edit2 size={14} /></button>
-                      {confirmDel === v.id ? (
+                      {confirmDel === v._id ? (
                         <div className="inline-flex items-center gap-1.5 bg-status-red-bg border border-status-red-border rounded-md px-2 h-8">
                           <span className="text-[11px] text-status-red">Delete?</span>
-                          <button onClick={() => { deleteVehicle(v.id); setConfirmDel(null); }} className="text-[11px] font-semibold text-status-red px-1.5">Yes</button>
+                          <button onClick={() => { deleteVehicle({ id: v._id }); setConfirmDel(null); }} className="text-[11px] font-semibold text-status-red px-1.5">Yes</button>
                           <button onClick={() => setConfirmDel(null)} className="text-[11px] text-text-muted px-1.5">No</button>
                         </div>
                       ) : (
-                        <button onClick={() => setConfirmDel(v.id)} className="w-8 h-8 rounded-md text-text-secondary hover:bg-status-red-bg hover:text-status-red inline-flex items-center justify-center"><Trash2 size={14} /></button>
+                        <button onClick={() => setConfirmDel(v._id)} className="w-8 h-8 rounded-md text-text-secondary hover:bg-status-red-bg hover:text-status-red inline-flex items-center justify-center"><Trash2 size={14} /></button>
                       )}
                     </div>
                   </td>
@@ -109,7 +111,9 @@ function VehiclesPage() {
   );
 }
 
-function VehicleFormPanel({ open, onClose, vehicle }: { open: boolean; onClose: () => void; vehicle: Vehicle | null }) {
+function VehicleFormPanel({ open, onClose, vehicle }: { open: boolean; onClose: () => void; vehicle: Doc<"vehicles"> | null }) {
+  const createVehicle = useMutation(api.vehicles.create);
+  const updateVehicle = useMutation(api.vehicles.update);
   const [rcNumber, setRc] = useState(vehicle?.rcNumber ?? "");
   const [registrationDate, setReg] = useState(vehicle?.registrationDate ?? "");
   const [trailerType, setTr] = useState(vehicle?.trailerType ?? "");
@@ -118,7 +122,7 @@ function VehicleFormPanel({ open, onClose, vehicle }: { open: boolean; onClose: 
   const [purchaseDate, setPd] = useState(vehicle?.purchaseDate ?? "");
   const [batteryHealth, setBh] = useState(String(vehicle?.batteryHealth ?? 95));
   const [batteryCapacity, setBc] = useState(String(vehicle?.batteryCapacity ?? 240));
-  const [status, setStatus] = useState<Vehicle["status"]>(vehicle?.status ?? "active");
+  const [status, setStatus] = useState<VehicleStatus>(vehicle?.status ?? "active");
 
   useMemo(() => {
     setRc(vehicle?.rcNumber ?? ""); setReg(vehicle?.registrationDate ?? "");
@@ -126,17 +130,17 @@ function VehicleFormPanel({ open, onClose, vehicle }: { open: boolean; onClose: 
     setMfd(vehicle?.manufactureDate ?? ""); setPd(vehicle?.purchaseDate ?? "");
     setBh(String(vehicle?.batteryHealth ?? 95)); setBc(String(vehicle?.batteryCapacity ?? 240));
     setStatus(vehicle?.status ?? "active");
-  }, [vehicle?.id]);
+  }, [vehicle?._id]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = {
       rcNumber, registrationDate, trailerType, manufacturer, manufactureDate, purchaseDate,
       batteryHealth: Number(batteryHealth), batteryCapacity: Number(batteryCapacity),
-      status, soc: vehicle?.soc ?? null, soh: vehicle?.soh ?? null,
+      status, soc: vehicle?.soc, soh: vehicle?.soh,
     };
-    if (vehicle) updateVehicle(vehicle.id, payload);
-    else createVehicle(payload);
+    if (vehicle) await updateVehicle({ id: vehicle._id, ...payload });
+    else await createVehicle(payload);
     onClose();
   };
 
@@ -158,7 +162,7 @@ function VehicleFormPanel({ open, onClose, vehicle }: { open: boolean; onClose: 
           <Field label="Battery capacity (kWh)" required><Input type="number" min={0} value={batteryCapacity} onChange={(e) => setBc(e.target.value)} required /></Field>
         </div>
         <Field label="Status" required>
-          <Select value={status} onChange={(e) => setStatus(e.target.value as Vehicle["status"])}>
+          <Select value={status} onChange={(e) => setStatus(e.target.value as VehicleStatus)}>
             <option value="active">Active</option>
             <option value="maintenance">Under maintenance</option>
             <option value="inactive">Inactive</option>

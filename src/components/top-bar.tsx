@@ -1,8 +1,8 @@
 import { Search, Bell } from "lucide-react";
-import { useStore } from "@/lib/mock-store";
+import { getProfile } from "@/lib/auth-guard";
 
 export function TopBar({ title }: { title: string }) {
-  const profile = useStore((s) => s.profile);
+  const profile = getProfile();
   const initials = profile ? profile.name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase() : "?";
   return (
     <header className="h-12 px-6 flex items-center justify-between border-b border-border-default bg-bg-0 sticky top-0 z-20">

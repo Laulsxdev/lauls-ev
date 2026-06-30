@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, Users, Truck, Route as RouteIcon, MapPin, Bot, LogOut, Zap, Menu } from "lucide-react";
+import { LayoutDashboard, Users, Truck, Route as RouteIcon, MapPin, Bot, LogOut, Zap, Menu, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logout, useStore } from "@/lib/mock-store";
+import { clearProfile, getProfile } from "@/lib/auth-guard";
 
 const nav = [
   { group: "Operations", items: [
@@ -18,11 +18,11 @@ const nav = [
 
 export function Sidebar({ onOpenAI }: { onOpenAI: () => void }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const profile = useStore((s) => s.profile);
+  const profile = getProfile();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
 
-  const handleLogout = () => { logout(); navigate({ to: "/auth" }); };
+  const handleLogout = () => { clearProfile(); navigate({ to: "/auth" }); };
   const isActive = (to: string, exact?: boolean) => exact ? pathname === to : pathname === to || pathname.startsWith(to + "/");
   const initials = profile ? profile.name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase() : "?";
 

@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Plus, Edit2, Trash2, Search } from "lucide-react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@convex/_generated/api";
+import { Id, Doc } from "@convex/_generated/dataModel";
 import { TopBar } from "@/components/top-bar";
 import { SlideOver } from "@/components/slide-over";
 import { Button, Input, Field, Textarea } from "@/components/ui-kit";
-import {
-  createDriver, deleteDriver, updateDriver, useStore,
-  type Driver,
-} from "@/lib/mock-store";
 import { format } from "date-fns";
 
 export const Route = createFileRoute("/admin/drivers")({
@@ -15,9 +14,10 @@ export const Route = createFileRoute("/admin/drivers")({
 });
 
 function DriversPage() {
-  const drivers = useStore((s) => s.drivers);
+  const drivers: Doc<"drivers">[] = useQuery(api.drivers.list) ?? [];
+  const deleteDriver = useMutation(api.drivers.remove);
   const [q, setQ] = useState("");
-  const [editing, setEditing] = useState<Driver | "new" | null>(null);
+  const [editing, setEditing] = useState<any | "new" | null>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
 
   const filtered = useMemo(
@@ -51,7 +51,7 @@ function DriversPage() {
                 <tr><td colSpan={6} className="text-center text-sm text-text-muted py-12">No drivers found.</td></tr>
               )}
               {filtered.map((d) => (
-                <tr key={d.id} className="group border-b border-border-default hover:bg-bg-2 transition">
+                <tr key={d._id} className="group border-b border-border-default hover:bg-bg-2 transition">
                   <td className="px-4 py-3.5 text-[13px] text-text-primary font-medium">{d.name}</td>
                   <td className="px-4 py-3.5 text-[13px] text-text-secondary tabular-nums">{d.phone}</td>
                   <td className="px-4 py-3.5 text-[13px] text-text-secondary font-mono">{d.aadhar}</td>
@@ -62,14 +62,14 @@ function DriversPage() {
                   <td className="px-4 py-3.5 text-right">
                     <div className="inline-flex gap-1 opacity-0 group-hover:opacity-100 transition">
                       <button onClick={() => setEditing(d)} className="w-8 h-8 rounded-md text-text-secondary hover:bg-bg-3 hover:text-text-primary inline-flex items-center justify-center"><Edit2 size={14} /></button>
-                      {confirmDel === d.id ? (
+                      {confirmDel === d._id ? (
                         <div className="inline-flex items-center gap-1.5 bg-status-red-bg border border-status-red-border rounded-md px-2 h-8">
                           <span className="text-[11px] text-status-red">Delete?</span>
-                          <button onClick={() => { deleteDriver(d.id); setConfirmDel(null); }} className="text-[11px] font-semibold text-status-red px-1.5">Yes</button>
+                          <button onClick={() => { deleteDriver({ id: d._id }); setConfirmDel(null); }} className="text-[11px] font-semibold text-status-red px-1.5">Yes</button>
                           <button onClick={() => setConfirmDel(null)} className="text-[11px] text-text-muted px-1.5">No</button>
                         </div>
                       ) : (
-                        <button onClick={() => setConfirmDel(d.id)} className="w-8 h-8 rounded-md text-text-secondary hover:bg-status-red-bg hover:text-status-red inline-flex items-center justify-center"><Trash2 size={14} /></button>
+                        <button onClick={() => setConfirmDel(d._id)} className="w-8 h-8 rounded-md text-text-secondary hover:bg-status-red-bg hover:text-status-red inline-flex items-center justify-center"><Trash2 size={14} /></button>
                       )}
                     </div>
                   </td>
@@ -89,16 +89,17 @@ function DriversPage() {
   );
 }
 
-function DriverFormPanel({ open, onClose, driver }: { open: boolean; onClose: () => void; driver: Driver | null }) {
+function DriverFormPanel({ open, onClose, driver }: { open: boolean; onClose: () => void; driver: any | null }) {
+  const createDriver = useMutation(api.drivers.create);
+  const updateDriver = useMutation(api.drivers.update);
   const [name, setName] = useState(driver?.name ?? "");
   const [phone, setPhone] = useState(driver?.phone ?? "");
   const [address, setAddress] = useState(driver?.address ?? "");
   const [aadhar, setAadhar] = useState(driver?.aadhar ?? "");
   const [dlNumber, setDl] = useState(driver?.dlNumber ?? "");
   const [dlExpiry, setDlExpiry] = useState(driver?.dlExpiry ?? "");
-  const [vehicles, setVehicles] = useState(driver?.vehicles.join(", ") ?? "");
+  const [vehicles, setVehicles] = useState(driver?.vehicles?.join(", ") ?? "");
 
-  // Reset on driver change
   useMemo(() => {
     setName(driver?.name ?? "");
     setPhone(driver?.phone ?? "");
@@ -106,17 +107,17 @@ function DriverFormPanel({ open, onClose, driver }: { open: boolean; onClose: ()
     setAadhar(driver?.aadhar ?? "");
     setDl(driver?.dlNumber ?? "");
     setDlExpiry(driver?.dlExpiry ?? "");
-    setVehicles(driver?.vehicles.join(", ") ?? "");
-  }, [driver?.id]);
+    setVehicles(driver?.vehicles?.join(", ") ?? "");
+  }, [driver?._id]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = {
       name, phone, address, aadhar, dlNumber, dlExpiry,
-      vehicles: vehicles.split(",").map((v) => v.trim()).filter(Boolean),
+      vehicles: vehicles.split(",").map((x: string) => x.trim()).filter(Boolean),
     };
-    if (driver) updateDriver(driver.id, payload);
-    else createDriver(payload);
+    if (driver) await updateDriver({ id: driver._id, ...payload });
+    else await createDriver(payload);
     onClose();
   };
 

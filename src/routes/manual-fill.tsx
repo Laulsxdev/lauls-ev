@@ -1,12 +1,11 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { Zap, LogOut, Check, Sparkles, AlertTriangle } from "lucide-react";
+import { useMemo, useState, useRef } from "react";
+import { Zap, LogOut, Check, Sparkles, AlertTriangle, Download, Upload, FileSpreadsheet, Search } from "lucide-react";
+import { useQuery, useMutation } from "convex/react";
+import { api } from "@convex/_generated/api";
+import { Doc, Id } from "@convex/_generated/dataModel";
 import { AuthGuard } from "@/lib/auth-guard";
 import { Button, Input, Textarea, Select, Field, Badge, SectionLabel } from "@/components/ui-kit";
-import {
-  aadharExists, createDriver, createGeofence, createTrip, createVehicle,
-  getAllLocations, logout, rcExists, useStore,
-} from "@/lib/mock-store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/manual-fill")({
@@ -14,10 +13,9 @@ export const Route = createFileRoute("/manual-fill")({
   component: () => (<AuthGuard role="worker"><ManualFillPage /></AuthGuard>),
 });
 
-type Tab = "driver" | "vehicle" | "trip" | "geofence";
+type Tab = "driver" | "vehicle" | "trip" | "geofence" | "import" | "export";
 
 function ManualFillPage() {
-  const profile = useStore((s) => s.profile);
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("driver");
 
@@ -26,6 +24,8 @@ function ManualFillPage() {
     { key: "vehicle", label: "Vehicle" },
     { key: "trip", label: "Trip" },
     { key: "geofence", label: "Geofence" },
+    { key: "import", label: "Import CSV" },
+    { key: "export", label: "Export Data" },
   ];
 
   return (
@@ -41,10 +41,9 @@ function ManualFillPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-text-secondary hidden sm:inline">{profile?.name}</span>
-          <Badge variant="blue">{profile?.role}</Badge>
+          <Badge variant="blue">worker</Badge>
           <button
-            onClick={() => { logout(); navigate({ to: "/auth" }); }}
+            onClick={() => { localStorage.removeItem("lauls-ev-profile"); navigate({ to: "/auth" }); }}
             className="w-8 h-8 rounded-md text-text-secondary hover:bg-bg-2 hover:text-status-red inline-flex items-center justify-center"
           >
             <LogOut size={14} />
@@ -74,13 +73,16 @@ function ManualFillPage() {
         {tab === "vehicle" && <VehicleForm />}
         {tab === "trip" && <TripForm />}
         {tab === "geofence" && <GeofenceForm />}
+        {tab === "import" && <CSVImport />}
+        {tab === "export" && <CSVExport />}
       </main>
     </div>
   );
 }
 
-// === Driver form ===
 function DriverForm() {
+  const createDriver = useMutation(api.drivers.create);
+  const drivers: Doc<"drivers">[] = useQuery(api.drivers.list) ?? [];
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -88,12 +90,13 @@ function DriverForm() {
   const [dlNumber, setDlNumber] = useState("");
   const [dlExpiry, setDlExpiry] = useState("");
   const [vehicles, setVehicles] = useState("");
-  const [aadharWarning, setAadharWarning] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const existingDriver = drivers.find((d) => d.aadhar === aadhar);
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    createDriver({
+    await createDriver({
       name, phone, address, aadhar, dlNumber, dlExpiry,
       vehicles: vehicles.split(",").map((v) => v.trim()).filter(Boolean),
     });
@@ -119,28 +122,15 @@ function DriverForm() {
       </FormSection>
 
       <FormSection label="Identification">
-        <Field label="Aadhar number" required hint={aadharWarning ?? undefined}>
-          <Input
-            value={aadhar}
-            onChange={(e) => { setAadhar(e.target.value); setAadharWarning(null); }}
-            onBlur={() => {
-              const e = aadharExists(aadhar);
-              setAadharWarning(e ? null : null);
-              if (e) setAadharWarning(null);
-            }}
-            required
-          />
+        <Field label="Aadhar number" required>
+          <Input value={aadhar} onChange={(e) => setAadhar(e.target.value)} required />
         </Field>
-        {aadhar && (() => {
-          const existing = aadharExists(aadhar);
-          if (!existing) return null;
-          return (
-            <div className="flex items-start gap-2 text-[12px] text-status-amber bg-status-amber-bg border border-status-amber-border rounded-md px-3 py-2">
-              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-              <span>This Aadhar is already registered to <strong>{existing.name}</strong>.</span>
-            </div>
-          );
-        })()}
+        {aadhar && existingDriver && (
+          <div className="flex items-start gap-2 text-[12px] text-status-amber bg-status-amber-bg border border-status-amber-border rounded-md px-3 py-2">
+            <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+            <span>This Aadhar is already registered to <strong>{existingDriver.name}</strong>.</span>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="DL number" required>
             <Input value={dlNumber} onChange={(e) => setDlNumber(e.target.value)} required />
@@ -162,8 +152,8 @@ function DriverForm() {
   );
 }
 
-// === Vehicle form ===
 function VehicleForm() {
+  const createVehicle = useMutation(api.vehicles.create);
   const [rcNumber, setRc] = useState("");
   const [registrationDate, setRegDate] = useState("");
   const [trailerType, setTrailer] = useState("");
@@ -175,12 +165,12 @@ function VehicleForm() {
   const [status, setStatus] = useState<"active" | "maintenance" | "inactive">("active");
   const [saved, setSaved] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    createVehicle({
+    await createVehicle({
       rcNumber, registrationDate, trailerType, manufacturer, manufactureDate, purchaseDate,
       batteryHealth: Number(batteryHealth), batteryCapacity: Number(batteryCapacity),
-      status, soc: null, soh: null,
+      status, soc: undefined, soh: undefined,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -199,16 +189,6 @@ function VehicleForm() {
             <Input type="date" value={registrationDate} onChange={(e) => setRegDate(e.target.value)} required />
           </Field>
         </div>
-        {rcNumber && (() => {
-          const existing = rcExists(rcNumber);
-          if (!existing) return null;
-          return (
-            <div className="flex items-start gap-2 text-[12px] text-status-amber bg-status-amber-bg border border-status-amber-border rounded-md px-3 py-2">
-              <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-              <span>RC <strong>{rcNumber}</strong> already exists in fleet.</span>
-            </div>
-          );
-        })()}
       </FormSection>
 
       <FormSection label="Specifications">
@@ -251,14 +231,20 @@ function VehicleForm() {
   );
 }
 
-// === Trip form ===
 function TripForm() {
-  const drivers = useStore((s) => s.drivers);
-  const vehicles = useStore((s) => s.vehicles);
-  const allLocations = useMemo(() => getAllLocations(), [useStore((s) => s.trips)]);
+  const drivers: Doc<"drivers">[] = useQuery(api.drivers.list) ?? [];
+  const vehicles: Doc<"vehicles">[] = useQuery(api.vehicles.list) ?? [];
+  const trips: Doc<"trips">[] = useQuery(api.trips.list) ?? [];
+  const createTrip = useMutation(api.trips.create);
 
-  const [driverId, setDriverId] = useState(drivers[0]?.id ?? "");
-  const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? "");
+  const allLocations = useMemo(() => {
+    const set = new Set<string>();
+    trips.forEach((t) => { if (t.origin) set.add(t.origin); if (t.destination) set.add(t.destination); });
+    return Array.from(set).sort();
+  }, [trips]);
+
+  const [driverId, setDriverId] = useState(drivers[0]?._id ?? "");
+  const [vehicleId, setVehicleId] = useState(vehicles[0]?._id ?? "");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
@@ -275,9 +261,9 @@ function TripForm() {
   const weightNum = parseFloat(cargoWeight) || 0;
   const estEnergy = distNum > 0 && weightNum > 0 ? +(distNum * 0.25 * (1 + weightNum / 10000)).toFixed(1) : null;
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    createTrip({
+    await createTrip({
       driverId, vehicleId, date, origin, destination,
       distance: distNum,
       cargoWeight: weightNum,
@@ -298,15 +284,15 @@ function TripForm() {
       <FormSection label="Assignment">
         <div className="grid grid-cols-2 gap-4">
           <Field label="Driver" required>
-            <Select value={driverId} onChange={(e) => setDriverId(e.target.value)} required>
+            <Select value={driverId} onChange={(e) => setDriverId(e.target.value as Id<"drivers">)} required>
               {drivers.length === 0 && <option value="">No drivers yet</option>}
-              {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              {drivers.map((d) => <option key={d._id} value={d._id}>{d.name}</option>)}
             </Select>
           </Field>
           <Field label="Vehicle" required>
-            <Select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} required>
+            <Select value={vehicleId} onChange={(e) => setVehicleId(e.target.value as Id<"vehicles">)} required>
               {vehicles.length === 0 && <option value="">No vehicles yet</option>}
-              {vehicles.map((v) => <option key={v.id} value={v.id}>{v.rcNumber}</option>)}
+              {vehicles.map((v) => <option key={v._id} value={v._id}>{v.rcNumber}</option>)}
             </Select>
           </Field>
         </div>
@@ -377,10 +363,10 @@ function TripForm() {
   );
 }
 
-// === Geofence form ===
 function GeofenceForm() {
-  const trips = useStore((s) => s.trips);
-  const [tripId, setTripId] = useState(trips[0]?.id ?? "");
+  const trips: Doc<"trips">[] = useQuery(api.trips.list) ?? [];
+  const createGeofence = useMutation(api.geofenceLogs.create);
+  const [tripId, setTripId] = useState(trips[0]?._id ?? "");
   const [tripStart, setStart] = useState("");
   const [tripEnd, setEnd] = useState("");
   const [idleMinutes, setIdle] = useState("");
@@ -388,11 +374,11 @@ function GeofenceForm() {
   const [breached, setBreached] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trip = trips.find((t) => t.id === tripId);
+    const trip = trips.find((t) => t._id === tripId);
     if (!trip) return;
-    createGeofence({
+    await createGeofence({
       tripId, vehicleId: trip.vehicleId,
       tripStart, tripEnd,
       idleMinutes: Number(idleMinutes) || 0,
@@ -407,9 +393,12 @@ function GeofenceForm() {
     <form onSubmit={onSubmit} className="space-y-7">
       <FormSection label="Trip Reference">
         <Field label="Trip" required>
-          <Select value={tripId} onChange={(e) => setTripId(e.target.value)} required>
+          <Select value={tripId} onChange={(e) => setTripId(e.target.value as Id<"trips">)} required>
             {trips.length === 0 && <option value="">No trips yet</option>}
-            {trips.map((t) => <option key={t.id} value={t.id}>{t.date} · {t.origin} → {t.destination}</option>)}
+            {trips.map((t) => {
+              const route = [t.origin, t.destination].filter(Boolean).join(" → ");
+              return <option key={t._id} value={t._id}>{t.date}{route ? ` · ${route}` : ""}</option>;
+            })}
           </Select>
         </Field>
       </FormSection>
@@ -498,5 +487,216 @@ function AutoCompleteField({ label, value, onChange, options, required }: {
         )}
       </div>
     </Field>
+  );
+}
+
+type ImportTable = "drivers" | "vehicles" | "trips";
+
+function CSVImport() {
+  const importDrivers = useMutation(api.bulk.importDrivers);
+  const importVehicles = useMutation(api.bulk.importVehicles);
+  const [table, setTable] = useState<ImportTable>("drivers");
+  const [preview, setPreview] = useState<any[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const templates: Record<ImportTable, { headers: string; example: string }> = {
+    drivers: {
+      headers: "name,phone,address,aadhar,dlNumber,dlExpiry,vehicles",
+      example: "Rajesh Kumar,+91 98765 43210,Sector 21 Gurugram,1234 5678 9012,DL-0420180012345,2028-06-12,KA01-EV-1024, KA01-EV-2048",
+    },
+    vehicles: {
+      headers: "rcNumber,registrationDate,trailerType,manufacturer,manufactureDate,purchaseDate,batteryHealth,batteryCapacity,status",
+      example: "KA01-EV-1024,2023-03-15,Refrigerated 20ft,Tata Motors,2023-01-10,2023-03-15,92,240,active",
+    },
+    trips: {
+      headers: "driverId,vehicleId,date,origin,destination,distance,cargoWeight,energyConsumed,idlingEnergy,estimatedRange,manHours,status",
+      example: "DRIVER_ID,VEHICLE_ID,2026-01-15,Bengaluru Depot,Hyderabad,280,3500,75.2,6.0,380,5.1,completed",
+    },
+  };
+
+  const downloadTemplate = () => {
+    const t = templates[table];
+    const blob = new Blob([t.headers + "\n" + t.example], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `${table}-template.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const parseCSV = (text: string) => {
+    const lines = text.trim().split("\n");
+    if (lines.length < 2) throw new Error("CSV must have header + at least 1 data row");
+    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    return lines.slice(1).map((line) => {
+      const cols = line.split(",").map((c) => c.trim());
+      const row: any = {};
+      headers.forEach((h, i) => { row[h] = cols[i] ?? ""; });
+      return row;
+    });
+  };
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null); setDone(false);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const raw = parseCSV(ev.target?.result as string);
+        let rows: any[];
+        if (table === "drivers") {
+          rows = raw.map((r) => ({
+            name: r.name || "", phone: r.phone || "", address: r.address || "",
+            aadhar: r.aadhar || "", dlNumber: r.dlnumber || r.dlNumber || "",
+            dlExpiry: r.dlexpiry || r.dlExpiry || "", vehicles: r.vehicles || "",
+          }));
+        } else if (table === "vehicles") {
+          rows = raw.map((r) => ({
+            rcNumber: r.rcnumber || r.rcNumber || "",
+            registrationDate: r.registrationdate || r.registrationDate || "",
+            trailerType: r.trailertype || r.trailerType || "",
+            manufacturer: r.manufacturer || "",
+            manufactureDate: r.manufacturedate || r.manufactureDate || "",
+            purchaseDate: r.purchasedate || r.purchaseDate || "",
+            batteryHealth: Number(r.batteryhealth || r.batteryHealth || 0),
+            batteryCapacity: Number(r.batterycapacity || r.batteryCapacity || 0),
+            status: (r.status || "active") as "active" | "maintenance" | "inactive",
+          }));
+        } else {
+          rows = raw.map((r) => ({
+            driverId: r.driverid || r.driverId || "",
+            vehicleId: r.vehicleid || r.vehicleId || "",
+            date: r.date || "", origin: r.origin || "", destination: r.destination || "",
+            distance: Number(r.distance || 0), cargoWeight: Number(r.cargoweight || r.cargoWeight || 0),
+            energyConsumed: Number(r.energyconsumed || r.energyConsumed || 0),
+            idlingEnergy: Number(r.idlingenergy || r.idlingEnergy || 0),
+            estimatedRange: Number(r.estimatedrange || r.estimatedRange || 0),
+            manHours: Number(r.manhours || r.manHours || 0),
+            status: (r.status || "completed") as "planned" | "ongoing" | "completed",
+          }));
+        }
+        setPreview(rows);
+      } catch (err: any) { setError(err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const confirmImport = async () => {
+    if (!preview) return;
+    try {
+      if (table === "drivers") {
+        await importDrivers({ rows: preview.map((r) => ({
+          name: r.name, phone: r.phone, address: r.address, aadhar: r.aadhar,
+          dlNumber: r.dlNumber, dlExpiry: r.dlExpiry, vehicles: r.vehicles,
+        }))});
+      } else if (table === "vehicles") {
+        await importVehicles({ rows: preview });
+      }
+      setPreview(null); setDone(true);
+      setTimeout(() => setDone(false), 2000);
+    } catch (err: any) { setError(err.message); }
+  };
+
+  return (
+    <div className="space-y-6">
+      <FormSection label="Import data from CSV">
+        <p className="text-[13px] text-text-secondary">Download a template, fill it with your data, then upload it here. You'll see a preview before anything is saved.</p>
+        <Field label="Data type" required>
+          <Select value={table} onChange={(e) => { setTable(e.target.value as ImportTable); setPreview(null); setError(null); }}>
+            <option value="drivers">Drivers</option>
+            <option value="vehicles">Vehicles</option>
+            <option value="trips">Trips</option>
+          </Select>
+        </Field>
+        <div className="flex gap-2">
+          <Button variant="ghost" onClick={downloadTemplate}><Download size={14} /> Download template</Button>
+          <Button variant="ghost" onClick={() => fileRef.current?.click()}><Upload size={14} /> Upload CSV</Button>
+          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleFile} />
+        </div>
+        {done && (
+          <div className="text-[12px] text-status-green bg-status-green-bg border border-status-green-border rounded-md px-3 py-2 flex items-center gap-2">
+            <Check size={14} /> Data imported successfully.
+          </div>
+        )}
+      </FormSection>
+
+      {error && (
+        <div className="text-[12px] text-status-red bg-status-red-bg border border-status-red-border rounded-md px-3 py-2">{error}</div>
+      )}
+
+      {preview && (
+        <div className="space-y-4">
+          <SectionLabel>Preview — {preview.length} rows</SectionLabel>
+          <div className="max-h-[300px] overflow-auto bg-bg-3 border border-border-default rounded-xl">
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-border-default bg-bg-2">
+                <th className="text-left px-3 py-2 text-text-muted font-medium w-8">#</th>
+                {Object.keys(preview[0] || {}).map((h) => (
+                  <th key={h} className="text-left px-3 py-2 text-text-muted font-medium capitalize">{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {preview.map((r, i) => (
+                  <tr key={i} className="border-b border-border-default">
+                    <td className="px-3 py-2 text-text-muted">{i + 1}</td>
+                    {Object.values(r).map((v, j) => (
+                      <td key={j} className="px-3 py-2 text-text-primary">{String(v)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={confirmImport}><Check size={14} /> Confirm & save {preview.length} rows</Button>
+            <Button variant="ghost" onClick={() => setPreview(null)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CSVExport() {
+  const drivers: Doc<"drivers">[] = useQuery(api.drivers.list) ?? [];
+  const vehicles: Doc<"vehicles">[] = useQuery(api.vehicles.list) ?? [];
+  const trips: Doc<"trips">[] = useQuery(api.trips.list) ?? [];
+  const [exportType, setExportType] = useState<"drivers" | "vehicles" | "trips">("drivers");
+
+  const download = () => {
+    let headers: string;
+    let rows: string[];
+    if (exportType === "drivers") {
+      headers = "name,phone,address,aadhar,dlNumber,dlExpiry,vehicles";
+      rows = drivers.map((d) => [d.name, d.phone, d.address, d.aadhar, d.dlNumber, d.dlExpiry, d.vehicles.join(", ")].join(","));
+    } else if (exportType === "vehicles") {
+      headers = "rcNumber,registrationDate,trailerType,manufacturer,manufactureDate,purchaseDate,batteryHealth,batteryCapacity,status";
+      rows = vehicles.map((v) => [v.rcNumber, v.registrationDate, v.trailerType, v.manufacturer, v.manufactureDate, v.purchaseDate, v.batteryHealth, v.batteryCapacity, v.status].join(","));
+    } else {
+      headers = "driverId,vehicleId,date,origin,destination,distance,cargoWeight,energyConsumed,idlingEnergy,estimatedRange,manHours,status";
+      rows = trips.map((t) => [t.driverId, t.vehicleId, t.date, t.origin, t.destination, t.distance, t.cargoWeight, t.energyConsumed, t.idlingEnergy, t.estimatedRange, t.manHours, t.status].join(","));
+    }
+    const blob = new Blob([headers + "\n" + rows.join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `${exportType}-export.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="space-y-6">
+      <FormSection label="Export data as CSV">
+        <p className="text-[13px] text-text-secondary">Download your fleet data as a CSV file for offline use or reporting.</p>
+        <Field label="What to export">
+          <Select value={exportType} onChange={(e) => setExportType(e.target.value as typeof exportType)}>
+            <option value="drivers">Drivers ({drivers.length})</option>
+            <option value="vehicles">Vehicles ({vehicles.length})</option>
+            <option value="trips">Trips ({trips.length})</option>
+          </Select>
+        </Field>
+        <Button onClick={download}><Download size={14} /> Download CSV</Button>
+      </FormSection>
+    </div>
   );
 }
