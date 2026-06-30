@@ -288,6 +288,59 @@ export function updateGeofence(id: string, patch: Partial<GeofenceLog>) {
   setState((s) => ({ geofence: s.geofence.map((g) => g.id === id ? { ...g, ...patch, updatedAt: Date.now() } : g) }));
 }
 
+// === Derived helpers (ponytail: simple filters, no abstraction needed until Convex replaces this) ===
+export function getTodayTrips(): Trip[] {
+  const today = new Date().toISOString().slice(0, 10);
+  return state.trips.filter((t) => t.date === today);
+}
+
+export type AlertSeverity = "warning" | "critical" | "info";
+export interface Alert {
+  id: string;
+  title: string;
+  detail: string;
+  severity: AlertSeverity;
+}
+
+export function getAlerts(): Alert[] {
+  const alerts: Alert[] = [];
+  for (const v of state.vehicles) {
+    if (v.status === "maintenance") {
+      alerts.push({ id: `maint-${v.id}`, title: "Maintenance", detail: `${v.rcNumber} — ${v.trailerType}`, severity: "warning" });
+    }
+    if (v.soc !== null && v.soc < 20) {
+      alerts.push({ id: `low-${v.id}`, title: "Low battery", detail: `${v.rcNumber} — ${v.soc}% SOC`, severity: "critical" });
+    }
+  }
+  for (const g of state.geofence.filter((g) => g.breached)) {
+    alerts.push({ id: `gf-${g.id}`, title: "Geofence breach", detail: `Vehicle ${g.vehicleId} — ${new Date(g.tripStart).toLocaleDateString()}`, severity: "critical" });
+  }
+  for (const d of state.drivers) {
+    const expiry = new Date(d.dlExpiry);
+    const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / 86400000);
+    if (daysLeft > 0 && daysLeft <= 30) {
+      alerts.push({ id: `dl-${d.id}`, title: "DL expiring", detail: `${d.name} — ${daysLeft}d left`, severity: "info" });
+    }
+  }
+  return alerts;
+}
+
+// ponytail: energyCost per kWh — swap for real rate when backend lands
+const ENERGY_COST_PER_KWH = 8; // ₹
+export function tripCost(t: Trip): number {
+  return Math.round(t.energyConsumed * ENERGY_COST_PER_KWH);
+}
+export function getCostStats(): { totalCost: number; costPerKm: number } {
+  const totalCost = state.trips.reduce((a, t) => a + tripCost(t), 0);
+  const totalKm = state.trips.reduce((a, t) => a + t.distance, 0);
+  return { totalCost, costPerKm: totalKm > 0 ? Math.round(totalCost / totalKm) : 0 };
+}
+export function getChargingStats(): { charging: number; available: number } {
+  const charging = state.vehicles.filter((v) => v.status === "active" && v.soc !== null && v.soc < 80).length;
+  const available = state.vehicles.filter((v) => v.status === "active").length;
+  return { charging, available };
+}
+
 // === Aggregate stats (admin dashboard) ===
 export interface FleetStats {
   totalVehicles: number;

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Truck, Users, Route as RouteIcon, Battery, Zap, AlertOctagon } from "lucide-react";
+import { Truck, Users, Route as RouteIcon, Battery, Zap, IndianRupee, AlertTriangle } from "lucide-react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   BarChart, Bar, PieChart, Pie, Cell,
@@ -7,7 +7,7 @@ import {
 import { TopBar } from "@/components/top-bar";
 import { KpiCard } from "@/components/kpi-card";
 import { Badge, SectionLabel } from "@/components/ui-kit";
-import { getFleetStats, useStore } from "@/lib/mock-store";
+import { getFleetStats, getTodayTrips, getAlerts, getCostStats, getChargingStats, useStore, tripCost } from "@/lib/mock-store";
 import { format } from "date-fns";
 
 export const Route = createFileRoute("/admin/")({
@@ -27,6 +27,15 @@ function Dashboard() {
   const vehicles = useStore((s) => s.vehicles);
   const drivers = useStore((s) => s.drivers);
   const stats = getFleetStats();
+
+  const todayTrips = getTodayTrips();
+  const alerts = getAlerts();
+  const cost = getCostStats();
+  const charging = getChargingStats();
+
+  const todayDistance = todayTrips.reduce((a, t) => a + t.distance, 0);
+  const todayEnergy = +todayTrips.reduce((a, t) => a + t.energyConsumed, 0).toFixed(1);
+  const todayCost = todayTrips.reduce((a, t) => a + tripCost(t), 0);
 
   // Build a 7-day series from trips
   const today = new Date();
@@ -65,15 +74,81 @@ function Dashboard() {
     <>
       <TopBar title="Dashboard" />
       <div className="p-6 space-y-6">
+        {/* Today's overview — what an operator actually needs at a glance */}
+        <div className="card-panel p-4">
+          <SectionLabel>Today</SectionLabel>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3">
+            <div>
+              <div className="text-2xl font-semibold text-text-primary tabular-nums">{todayTrips.length}</div>
+              <div className="text-xs text-text-muted">trips</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-text-primary tabular-nums">{todayDistance} km</div>
+              <div className="text-xs text-text-muted">distance</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-text-primary tabular-nums">{todayEnergy} kWh</div>
+              <div className="text-xs text-text-muted">energy</div>
+            </div>
+            <div>
+              <div className="text-2xl font-semibold text-text-primary tabular-nums">₹{todayCost.toLocaleString()}</div>
+              <div className="text-xs text-text-muted">cost today</div>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           <KpiCard icon={<Truck size={16} />} label="Active vehicles" value={`${stats.activeVehicles}/${stats.totalVehicles}`} trend={{ value: 4.2, positive: true }} sparkline={[3, 4, 4, 5, 5, 4, 5]} />
           <KpiCard icon={<Users size={16} />} label="Drivers on roster" value={String(stats.totalDrivers)} trend={{ value: 8.1, positive: true }} sparkline={[2, 2, 3, 3, 4, 4, 4]} />
           <KpiCard icon={<RouteIcon size={16} />} label="Trips logged" value={String(stats.totalTrips)} trend={{ value: 12.3, positive: true }} sparkline={spark("distance")} />
           <KpiCard icon={<Zap size={16} />} label="Energy consumed" value={`${stats.totalEnergy.toLocaleString()} kWh`} trend={{ value: 3.4, positive: false }} sparkline={spark("energy")} accent="amber" />
           <KpiCard icon={<Battery size={16} />} label="Avg battery health" value={`${stats.avgBatteryHealth}%`} trend={{ value: 1.1, positive: false }} sparkline={[88, 87, 86, 85, 85, 84, stats.avgBatteryHealth]} accent="green" />
-          <KpiCard icon={<AlertOctagon size={16} />} label="Geofence breaches" value={String(stats.geofenceBreaches)} trend={{ value: 18.0, positive: false }} sparkline={[0, 1, 1, 2, 1, 2, stats.geofenceBreaches]} accent="red" />
+          <KpiCard icon={<IndianRupee size={16} />} label="Total spend" value={`₹${cost.totalCost.toLocaleString()}`} trend={{ value: 2.1, positive: false }} sparkline={[1200, 1350, 1180, 1420, 1390, 1280, cost.totalCost]} accent="amber" />
         </div>
 
+        {/* Alerts + charging overview */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="card-panel p-5 lg:col-span-2">
+            <SectionLabel>Alerts</SectionLabel>
+            {alerts.length === 0 ? (
+              <p className="text-sm text-text-muted mt-3">No alerts.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {alerts.slice(0, 5).map((a) => (
+                  <div key={a.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-bg-2">
+                    <AlertTriangle size={14} className={a.severity === "critical" ? "text-red-400 mt-0.5" : a.severity === "warning" ? "text-amber-400 mt-0.5" : "text-blue-400 mt-0.5"} />
+                    <div className="min-w-0">
+                      <div className="text-sm text-text-primary">{a.title}</div>
+                      <div className="text-xs text-text-muted truncate">{a.detail}</div>
+                    </div>
+                  </div>
+                ))}
+                {alerts.length > 5 && <div className="text-xs text-text-muted text-center">{alerts.length - 5} more alerts</div>}
+              </div>
+            )}
+          </div>
+
+          <div className="card-panel p-5">
+            <SectionLabel>Charging</SectionLabel>
+            <div className="mt-4 space-y-4">
+              <div>
+                <div className="text-3xl font-semibold text-text-primary tabular-nums">{charging.available}</div>
+                <div className="text-xs text-text-muted">vehicles active</div>
+              </div>
+              <div>
+                <div className="text-3xl font-semibold text-amber-400 tabular-nums">{charging.charging}</div>
+                <div className="text-xs text-text-muted">need charging (&lt;80%)</div>
+              </div>
+              <div className="pt-3 border-t border-border-default">
+                <div className="text-xs text-text-muted">Cost per km</div>
+                <div className="text-lg font-semibold text-text-primary tabular-nums mt-1">₹{cost.costPerKm}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="card-panel p-5">
             <div className="flex items-center justify-between mb-4">

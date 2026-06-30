@@ -61,7 +61,7 @@ export function AIChatPanel({ open, onClose }: { open: boolean; onClose: () => v
       title={
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-accent" />
-          <span>Fleet AI</span>
+          <span>Lev-AI</span>
           <span className="w-1.5 h-1.5 rounded-full bg-accent" style={{ animation: "live-pulse 1.6s infinite" }} />
         </div>
       }
