@@ -17,14 +17,12 @@ type Tab = "drivers" | "vehicles" | "trips";
 // ponytail: one combined template instead of 3 separate ones. Upload once, route by type column.
 const ALL_HEADERS = ["type","name","phone","address","aadhar","dlNumber","dlExpiry","vehicles","rcNumber","registrationDate","trailerType","manufacturer","manufactureDate","purchaseDate","batteryHealth","batteryCapacity","vehicleStatus","driverName","vehicleRC","date","origin","destination","distance","cargoWeight","energyConsumed","idlingEnergy","estimatedRange","manHours","tripStatus"];
 
-function makeRow(fill: Record<string, string | number>) {
-  return ALL_HEADERS.map((h) => String(fill[h] ?? "")).join(",");
-}
-
+// ponytail: placeholders in every cell — Excel drops trailing empty columns
+const P = "0";
 const TEMPLATE_ROWS = [
-  makeRow({ type: "driver", name: "Rajesh Kumar", phone: "+91 98765 43210", address: "Sector 21 Gurugram", aadhar: "1234 5678 9012", dlNumber: "DL-0420180012345", dlExpiry: "2028-06-12", vehicles: "KA01-EV-1024" }),
-  makeRow({ type: "vehicle", rcNumber: "RC-001", registrationDate: "2023-03-15", trailerType: "Refrigerated 20ft", manufacturer: "Tata Motors", manufactureDate: "2023-01-10", purchaseDate: "2023-03-15", batteryHealth: 92, batteryCapacity: 240, vehicleStatus: "active" }),
-  makeRow({ type: "trip", driverName: "Rajesh Kumar", vehicleRC: "RC-001", date: "2026-01-15", origin: "Bengaluru Depot", destination: "Hyderabad", distance: 280, cargoWeight: 3500, energyConsumed: 75.2, idlingEnergy: 6.0, estimatedRange: 380, manHours: 5.1, tripStatus: "completed" }),
+  ["driver","Rajesh Kumar","+91 98765 43210","Sector 21 Gurugram","1234 5678 9012","DL-0420180012345","2028-06-12","KA01-EV-1024",P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P].join(","),
+  ["vehicle",P,P,P,P,P,P,P,"RC-001","2023-03-15","Refrigerated 20ft","Tata Motors","2023-01-10","2023-03-15","92","240","active",P,P,P,P,P,P,P,P,P,P,P,P].join(","),
+  ["trip",P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,P,"Rajesh Kumar","RC-001","2026-01-15","Bengaluru Depot","Hyderabad","280","3500","75.2","6.0","380","5.1","completed"].join(","),
 ];
 
 function parseCombinedCSV(text: string) {
@@ -58,7 +56,8 @@ function BulkOperationsPage() {
   ];
 
   const downloadTemplate = () => {
-    const blob = new Blob([ALL_HEADERS.join(",") + "\n" + TEMPLATE_ROWS.join("\n")], { type: "text/csv" });
+    const csv = ALL_HEADERS.join(",") + "\n" + TEMPLATE_ROWS.join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = "fleet-template.csv"; a.click();
     URL.revokeObjectURL(url);
