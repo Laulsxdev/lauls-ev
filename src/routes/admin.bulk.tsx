@@ -57,9 +57,9 @@ function BulkOperationsPage() {
 
   const downloadTemplate = () => {
     const csv = ALL_HEADERS.join(",") + "\n" + TEMPLATE_ROWS.join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = "fleet-template.csv"; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `fleet-template-${Date.now()}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
