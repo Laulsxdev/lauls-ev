@@ -11,6 +11,6 @@ export default defineConfig({
     server: { entry: "server" },
   },
   nitro: {
-    preset: "netlify",
+    preset: (process.env.NITRO_PRESET as any) || "node-server",
   },
 });
