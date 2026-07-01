@@ -492,35 +492,31 @@ function AutoCompleteField({ label, value, onChange, options, required }: {
 
 type ImportTable = "drivers" | "vehicles" | "trips";
 
+// ponytail: one combined template, same as bulk page
+const CSV_HEADERS = ["type","name","phone","address","aadhar","dlNumber","dlExpiry","vehicles","rcNumber","registrationDate","trailerType","manufacturer","manufactureDate","purchaseDate","batteryHealth","batteryCapacity","vehicleStatus","driverName","vehicleRC","date","origin","destination","distance","cargoWeight","energyConsumed","idlingEnergy","estimatedRange","manHours","tripStatus"];
+const CSV_P = "0";
+const CSV_TEMPLATE_ROWS = [
+  ["driver","Rajesh Kumar","+91 98765 43210","Sector 21 Gurugram","1234 5678 9012","DL-0420180012345","2028-06-12","KA01-EV-1024",CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P].join(","),
+  ["vehicle",CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,"RC-001","2023-03-15","Refrigerated 20ft","Tata Motors","2023-01-10","2023-03-15","92","240","active",CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P].join(","),
+  ["trip",CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,CSV_P,"Rajesh Kumar","RC-001","2026-01-15","Bengaluru Depot","Hyderabad","280","3500","75.2","6.0","380","5.1","completed"].join(","),
+];
+
 function CSVImport() {
   const importDrivers = useMutation(api.bulk.importDrivers);
   const importVehicles = useMutation(api.bulk.importVehicles);
-  const [table, setTable] = useState<ImportTable>("drivers");
-  const [preview, setPreview] = useState<any[] | null>(null);
+  const importTrips = useMutation(api.bulk.importTrips);
+  const drivers: Doc<"drivers">[] = useQuery(api.drivers.list) ?? [];
+  const vehicles: Doc<"vehicles">[] = useQuery(api.vehicles.list) ?? [];
+  const [preview, setPreview] = useState<{ drivers: any[]; vehicles: any[]; trips: any[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const templates: Record<ImportTable, { headers: string; example: string }> = {
-    drivers: {
-      headers: "name,phone,address,aadhar,dlNumber,dlExpiry,vehicles",
-      example: "Rajesh Kumar,+91 98765 43210,Sector 21 Gurugram,1234 5678 9012,DL-0420180012345,2028-06-12,KA01-EV-1024, KA01-EV-2048",
-    },
-    vehicles: {
-      headers: "rcNumber,registrationDate,trailerType,manufacturer,manufactureDate,purchaseDate,batteryHealth,batteryCapacity,status",
-      example: "KA01-EV-1024,2023-03-15,Refrigerated 20ft,Tata Motors,2023-01-10,2023-03-15,92,240,active",
-    },
-    trips: {
-      headers: "driverId,vehicleId,date,origin,destination,distance,cargoWeight,energyConsumed,idlingEnergy,estimatedRange,manHours,status",
-      example: "DRIVER_ID,VEHICLE_ID,2026-01-15,Bengaluru Depot,Hyderabad,280,3500,75.2,6.0,380,5.1,completed",
-    },
-  };
-
   const downloadTemplate = () => {
-    const t = templates[table];
-    const blob = new Blob([t.headers + "\n" + t.example], { type: "text/csv" });
+    const csv = CSV_HEADERS.join(",") + "\n" + CSV_TEMPLATE_ROWS.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `${table}-template.csv`; a.click();
+    const a = document.createElement("a"); a.href = url; a.download = `fleet-template-${Date.now()}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -528,6 +524,7 @@ function CSVImport() {
     const lines = text.trim().split("\n");
     if (lines.length < 2) throw new Error("CSV must have header + at least 1 data row");
     const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    if (!headers.includes("type")) throw new Error("Missing required column: type (driver/vehicle/trip)");
     return lines.slice(1).map((line) => {
       const cols = line.split(",").map((c) => c.trim());
       const row: any = {};
@@ -544,39 +541,18 @@ function CSVImport() {
     reader.onload = (ev) => {
       try {
         const raw = parseCSV(ev.target?.result as string);
-        let rows: any[];
-        if (table === "drivers") {
-          rows = raw.map((r) => ({
-            name: r.name || "", phone: r.phone || "", address: r.address || "",
-            aadhar: r.aadhar || "", dlNumber: r.dlnumber || r.dlNumber || "",
-            dlExpiry: r.dlexpiry || r.dlExpiry || "", vehicles: r.vehicles || "",
-          }));
-        } else if (table === "vehicles") {
-          rows = raw.map((r) => ({
-            rcNumber: r.rcnumber || r.rcNumber || "",
-            registrationDate: r.registrationdate || r.registrationDate || "",
-            trailerType: r.trailertype || r.trailerType || "",
-            manufacturer: r.manufacturer || "",
-            manufactureDate: r.manufacturedate || r.manufactureDate || "",
-            purchaseDate: r.purchasedate || r.purchaseDate || "",
-            batteryHealth: Number(r.batteryhealth || r.batteryHealth || 0),
-            batteryCapacity: Number(r.batterycapacity || r.batteryCapacity || 0),
-            status: (r.status || "active") as "active" | "maintenance" | "inactive",
-          }));
-        } else {
-          rows = raw.map((r) => ({
-            driverId: r.driverid || r.driverId || "",
-            vehicleId: r.vehicleid || r.vehicleId || "",
-            date: r.date || "", origin: r.origin || "", destination: r.destination || "",
-            distance: Number(r.distance || 0), cargoWeight: Number(r.cargoweight || r.cargoWeight || 0),
-            energyConsumed: Number(r.energyconsumed || r.energyConsumed || 0),
-            idlingEnergy: Number(r.idlingenergy || r.idlingEnergy || 0),
-            estimatedRange: Number(r.estimatedrange || r.estimatedRange || 0),
-            manHours: Number(r.manhours || r.manHours || 0),
-            status: (r.status || "completed") as "planned" | "ongoing" | "completed",
-          }));
+        const dRows: any[] = [], vRows: any[] = [], tRows: any[] = [];
+        for (const r of raw) {
+          const t = (r.type || "").toLowerCase();
+          if (t === "driver") {
+            dRows.push({ name: r.name || "", phone: r.phone || "", address: r.address || "", aadhar: r.aadhar || "", dlNumber: r.dlnumber || r.dlNumber || "", dlExpiry: r.dlexpiry || r.dlExpiry || "", vehicles: r.vehicles || "" });
+          } else if (t === "vehicle") {
+            vRows.push({ rcNumber: r.rcnumber || r.rcNumber || "", registrationDate: r.registrationdate || r.registrationDate || "", trailerType: r.trailertype || r.trailerType || "", manufacturer: r.manufacturer || "", manufactureDate: r.manufacturedate || r.manufactureDate || "", purchaseDate: r.purchasedate || r.purchaseDate || "", batteryHealth: Number(r.batteryhealth || r.batteryHealth || 0), batteryCapacity: Number(r.batterycapacity || r.batteryCapacity || 0), status: (r.vehiclestatus || r.status || "active") as "active" | "maintenance" | "inactive" });
+          } else if (t === "trip") {
+            tRows.push({ driverName: r.drivername || r.driverName || "", vehicleRC: r.vehiclerc || r.vehicleRC || "", date: r.date || "", origin: r.origin || "", destination: r.destination || "", distance: Number(r.distance || 0), cargoWeight: Number(r.cargoweight || r.cargoWeight || 0), energyConsumed: Number(r.energyconsumed || r.energyConsumed || 0), idlingEnergy: Number(r.idlingenergy || r.idlingEnergy || 0), estimatedRange: Number(r.estimatedrange || r.estimatedRange || 0), manHours: Number(r.manhours || r.manHours || 0), status: (r.tripstatus || r.status || "completed") as "planned" | "ongoing" | "completed" });
+          }
         }
-        setPreview(rows);
+        setPreview({ drivers: dRows, vehicles: vRows, trips: tRows });
       } catch (err: any) { setError(err.message); }
     };
     reader.readAsText(file);
@@ -586,13 +562,15 @@ function CSVImport() {
   const confirmImport = async () => {
     if (!preview) return;
     try {
-      if (table === "drivers") {
-        await importDrivers({ rows: preview.map((r) => ({
-          name: r.name, phone: r.phone, address: r.address, aadhar: r.aadhar,
-          dlNumber: r.dlNumber, dlExpiry: r.dlExpiry, vehicles: r.vehicles,
-        }))});
-      } else if (table === "vehicles") {
-        await importVehicles({ rows: preview });
+      if (preview.drivers.length > 0) await importDrivers({ rows: preview.drivers });
+      if (preview.vehicles.length > 0) await importVehicles({ rows: preview.vehicles });
+      if (preview.trips.length > 0) {
+        const driverMap = new Map(drivers.map((d) => [d.name.toLowerCase(), d._id]));
+        const vehicleMap = new Map(vehicles.map((v) => [v.rcNumber.toLowerCase(), v._id]));
+        const resolved = preview.trips.map((t) => ({ ...t, driverId: driverMap.get(t.driverName.toLowerCase()) ?? "", vehicleId: vehicleMap.get(t.vehicleRC.toLowerCase()) ?? "" }));
+        const missing = resolved.filter((t) => !t.driverId || !t.vehicleId);
+        if (missing.length > 0) { setError(`Cannot find driver/vehicle for ${missing.length} trip(s): ${missing.slice(0, 3).map((m) => `${m.driverName}/${m.vehicleRC}`).join(", ")}`); return; }
+        await importTrips({ rows: resolved });
       }
       setPreview(null); setDone(true);
       setTimeout(() => setDone(false), 2000);
@@ -603,13 +581,6 @@ function CSVImport() {
     <div className="space-y-6">
       <FormSection label="Import data from CSV">
         <p className="text-[13px] text-text-secondary">Download a template, fill it with your data, then upload it here. You'll see a preview before anything is saved.</p>
-        <Field label="Data type" required>
-          <Select value={table} onChange={(e) => { setTable(e.target.value as ImportTable); setPreview(null); setError(null); }}>
-            <option value="drivers">Drivers</option>
-            <option value="vehicles">Vehicles</option>
-            <option value="trips">Trips</option>
-          </Select>
-        </Field>
         <div className="flex gap-2">
           <Button variant="ghost" onClick={downloadTemplate}><Download size={14} /> Download template</Button>
           <Button variant="ghost" onClick={() => fileRef.current?.click()}><Upload size={14} /> Upload CSV</Button>
@@ -628,29 +599,65 @@ function CSVImport() {
 
       {preview && (
         <div className="space-y-4">
-          <SectionLabel>Preview — {preview.length} rows</SectionLabel>
-          <div className="max-h-[300px] overflow-auto bg-bg-3 border border-border-default rounded-xl">
-            <table className="w-full text-xs">
-              <thead><tr className="border-b border-border-default bg-bg-2">
-                <th className="text-left px-3 py-2 text-text-muted font-medium w-8">#</th>
-                {Object.keys(preview[0] || {}).map((h) => (
-                  <th key={h} className="text-left px-3 py-2 text-text-muted font-medium capitalize">{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {preview.map((r, i) => (
-                  <tr key={i} className="border-b border-border-default">
-                    <td className="px-3 py-2 text-text-muted">{i + 1}</td>
-                    {Object.values(r).map((v, j) => (
-                      <td key={j} className="px-3 py-2 text-text-primary">{String(v)}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SectionLabel>Preview — {preview.drivers.length} drivers, {preview.vehicles.length} vehicles, {preview.trips.length} trips</SectionLabel>
+
+          {preview.drivers.length > 0 && (
+            <div className="max-h-[200px] overflow-auto bg-bg-3 border border-border-default rounded-xl">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b border-border-default bg-bg-2">
+                  {["Name", "Phone", "Aadhar", "DL Number", "DL Expiry", "Vehicles"].map((h) => <th key={h} className="text-left px-3 py-2 text-text-muted font-medium">{h}</th>)}
+                </tr></thead>
+                <tbody>{preview.drivers.map((r, i) => <tr key={i} className="border-b border-border-default">
+                  <td className="px-3 py-2 text-text-primary">{r.name}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.phone}</td>
+                  <td className="px-3 py-2 text-text-secondary font-mono">{r.aadhar}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.dlNumber}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.dlExpiry}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.vehicles}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          )}
+
+          {preview.vehicles.length > 0 && (
+            <div className="max-h-[200px] overflow-auto bg-bg-3 border border-border-default rounded-xl">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b border-border-default bg-bg-2">
+                  {["RC Number", "Manufacturer", "Trailer", "Battery", "Capacity", "Status"].map((h) => <th key={h} className="text-left px-3 py-2 text-text-muted font-medium">{h}</th>)}
+                </tr></thead>
+                <tbody>{preview.vehicles.map((r, i) => <tr key={i} className="border-b border-border-default">
+                  <td className="px-3 py-2 text-text-primary font-mono">{r.rcNumber}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.manufacturer}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.trailerType}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.batteryHealth}%</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.batteryCapacity} kWh</td>
+                  <td className="px-3 py-2"><Badge variant={r.status === "active" ? "green" : r.status === "maintenance" ? "amber" : "red"}>{r.status}</Badge></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          )}
+
+          {preview.trips.length > 0 && (
+            <div className="max-h-[200px] overflow-auto bg-bg-3 border border-border-default rounded-xl">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b border-border-default bg-bg-2">
+                  {["Driver", "Vehicle", "Date", "Route", "Distance", "Energy", "Status"].map((h) => <th key={h} className="text-left px-3 py-2 text-text-muted font-medium">{h}</th>)}
+                </tr></thead>
+                <tbody>{preview.trips.map((r, i) => <tr key={i} className="border-b border-border-default">
+                  <td className="px-3 py-2 text-text-primary">{r.driverName}</td>
+                  <td className="px-3 py-2 text-text-secondary font-mono">{r.vehicleRC}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.date}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.origin} → {r.destination}</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.distance} km</td>
+                  <td className="px-3 py-2 text-text-secondary">{r.energyConsumed} kWh</td>
+                  <td className="px-3 py-2"><Badge variant={r.status === "completed" ? "green" : r.status === "ongoing" ? "amber" : "blue"}>{r.status}</Badge></td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          )}
+
           <div className="flex gap-2">
-            <Button onClick={confirmImport}><Check size={14} /> Confirm & save {preview.length} rows</Button>
+            <Button onClick={confirmImport}><Check size={14} /> Confirm & save</Button>
             <Button variant="ghost" onClick={() => setPreview(null)}>Cancel</Button>
           </div>
         </div>
