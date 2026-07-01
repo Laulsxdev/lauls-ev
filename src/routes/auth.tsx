@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Zap, HardHat, Shield } from "lucide-react";
+import { Zap } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/_generated/api";
 import { Button, Input, Field } from "@/components/ui-kit";
@@ -16,9 +16,6 @@ export const Route = createFileRoute("/auth")({
   }),
   component: AuthPage,
 });
-
-const ADMIN_CREDS = { email: "admin@lauls.dev", password: "admin123", name: "Admin" };
-const WORKER_CREDS = { email: "worker@lauls.dev", password: "worker123", name: "Field Worker" };
 
 function AuthPage() {
   const navigate = useNavigate();
@@ -44,10 +41,8 @@ function AuthPage() {
     setError(null);
     setLoading(true);
 
-    const cred = role === "admin" ? ADMIN_CREDS : WORKER_CREDS;
-
-    if (email !== cred.email || password !== cred.password) {
-      setError(`Invalid credentials. Use ${cred.email} / ${cred.password}`);
+    if (!email || !password) {
+      setError("Email and password are required");
       setLoading(false);
       return;
     }
@@ -62,14 +57,14 @@ function AuthPage() {
         return;
       }
       const profileId = await createProfile({
-        name: cred.name,
-        email: cred.email,
+        name: email.split("@")[0],
+        email,
         role,
       });
       const lp: LocalProfile = {
         _id: profileId,
-        name: cred.name,
-        email: cred.email,
+        name: email.split("@")[0],
+        email,
         role,
       };
       setProfile(lp);
@@ -110,9 +105,9 @@ function AuthPage() {
 
         <form onSubmit={submit} className="space-y-4">
           <Field label="Email" required>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder={role === "admin" ? "admin@lauls.dev" : "worker@lauls.dev"} />
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="Enter email" />
           </Field>
-          <Field label="Password" required hint={role === "admin" ? "Hint: admin123" : "Hint: worker123"}>
+          <Field label="Password" required>
             <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Enter password" />
           </Field>
 
@@ -126,11 +121,6 @@ function AuthPage() {
             Sign in as {role}
           </Button>
         </form>
-
-        <div className="mt-5 text-center space-y-1 text-[11px] text-text-muted">
-          <div><span className="text-text-secondary font-semibold">Admin</span> admin@lauls.dev / admin123</div>
-          <div><span className="text-text-secondary font-semibold">Worker</span> worker@lauls.dev / worker123</div>
-        </div>
       </div>
     </main>
   );
